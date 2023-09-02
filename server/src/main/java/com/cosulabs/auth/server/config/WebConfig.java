@@ -25,10 +25,10 @@ public class WebConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
             http
-                    .csrf(a -> a.disable())
+
                     .authorizeHttpRequests(
-                    authorizationManagerRequestMatcherRegistry -> authorizationManagerRequestMatcherRegistry.anyRequest().authenticated()
-            );
+                    a-> a.anyRequest().permitAll());
+
 
 
             return http.build();
