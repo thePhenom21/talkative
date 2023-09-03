@@ -1,92 +1,97 @@
 package main
 
 import (
-	"net/http"
-
+	"database/sql"
 	"os"
 
 	"github.com/golang-jwt/jwt/v5"
-	echojwt "github.com/labstack/echo-jwt/v4"
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	_ "github.com/lib/pq"
 )
 
 func envVariable(key string) string {
-
+	godotenv.Load()
 	return os.Getenv(key)
 }
 
 type jwtCustomClaims struct {
 	username string `json:"username"`
 	password string `json:"password"`
-	Admin    bool   `json:"admin"`
 	jwt.RegisteredClaims
 }
 
 func login(c echo.Context) error {
-	username := c.FormValue("username")
-	password := c.FormValue("password")
+	return c.String(200, "")
+}
 
-	// Throws unauthorized error
-	if username != "jon" || password != "shhh!" {
-		return echo.ErrUnauthorized
+func register(c echo.Context, db *sql.DB) error {
+
+	username := c.QueryParam("username")
+	password := c.QueryParam("password")
+
+	var checkUser string
+
+	row, err := db.Query("SELECT username FROM users")
+
+	if err != nil {
+		println("error " + err.Error())
 	}
 
-	// Set custom claims
-	claims := &jwtCustomClaims{}
-	// Create token with claims
+	if row == nil {
+		return c.String(400, "db error")
+	}
+
+	for row.Next() {
+		row.Scan(&checkUser)
+		if checkUser == username {
+			return c.String(400, "User already registered")
+		}
+	}
+
+	claims := jwt.MapClaims{
+		"username": username,
+		"password": password,
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	// Generate encoded token and send it as response.
-	t, err := token.SignedString([]byte(envVariable("secret-key")))
+	t, err := token.SignedString([]byte(envVariable("SECRET")))
 	if err != nil {
+		print(t)
 		return err
 	}
 
-	return c.JSON(http.StatusOK, echo.Map{
-		"token": t,
-	})
-}
+	a, err := db.Exec("INSERT INTO users (username,password,tok) VALUES('" + username + "','" + password + "','" + t + "')")
 
-func restricted(c echo.Context) error {
-	if false {
-		return echo.ErrBadRequest
+	if err != nil {
+		print("err" + err.Error())
+		print(a.LastInsertId())
 	}
 
-	return c.HTML(200, "<h1>wowow</h1>")
-}
-
-func register(c echo.Context) error {
-	if false {
-		return echo.ErrBadRequest
-	}
-
-	return c.HTML(200, "<h1>wowow</h1>")
+	return c.String(200, "User "+username+" has been registered")
 }
 
 func main() {
 	e := echo.New()
+
+	path := envVariable("DB")
+
+	db, err := sql.Open("postgres", path)
+	if err != nil {
+		print("Err" + err.Error())
+	}
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
 	e.POST("/login", login)
 
-	e.GET("/register", register)
+	e.POST("/register", func(c echo.Context) error {
+		return register(c, db)
+	})
 
-	// Restricted group
-	r := e.Group("/restricted")
-
-	// Configure middleware with the custom claims type
-	config := echojwt.Config{
-		NewClaimsFunc: func(c echo.Context) jwt.Claims {
-			return new(jwtCustomClaims)
-		},
-		SigningKey: []byte(envVariable("secret-key")),
-	}
-
-	r.Use(echojwt.WithConfig(config))
-	r.GET("/auth", restricted)
+	defer db.Close()
 
 	e.Logger.Fatal(e.Start(":8081"))
 }
