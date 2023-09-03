@@ -2,9 +2,11 @@ package main
 
 import (
 	"database/sql"
+	echojwt "github.com/labstack/echo-jwt"
 	"os"
+	"time"
 
-	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -17,13 +19,13 @@ func envVariable(key string) string {
 }
 
 type jwtCustomClaims struct {
-	username string `json:"username"`
-	password string `json:"password"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 	jwt.RegisteredClaims
 }
 
-func validateJWT(key string, db *sql.DB) {
-	db.Query("SELECT jwt ")
+func validateJWT(c echo.Context) error {
+	return c.String(200, "hey")
 }
 
 func login(c echo.Context, db *sql.DB) error {
@@ -78,13 +80,18 @@ func register(c echo.Context, db *sql.DB) error {
 		}
 	}
 
-	claims := jwt.MapClaims{
-		"username": username,
-		"password": password,
+	claims := &jwtCustomClaims{
+		username,
+		password,
+		jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 72)),
+		},
 	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	t, err := token.SignedString([]byte(envVariable("SECRET")))
+
 	if err != nil {
 		print(t)
 		return err
@@ -113,6 +120,16 @@ func main() {
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 
+	r := e.Group("/restricted")
+
+	config := echojwt.Config{
+		NewClaimsFunc: func(c echo.Context) jwt.Claims {
+			return new(jwtCustomClaims)
+		},
+		SigningKey: []byte(envVariable("SECRET")),
+	}
+	r.Use(echojwt.WithConfig(config))
+
 	e.POST("/login", func(c echo.Context) error {
 		return login(c, db)
 	})
@@ -120,6 +137,8 @@ func main() {
 	e.POST("/register", func(c echo.Context) error {
 		return register(c, db)
 	})
+
+	r.GET("", validateJWT)
 
 	defer db.Close()
 
