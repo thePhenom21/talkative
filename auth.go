@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"github.com/ServiceWeaver/weaver"
 	echojwt "github.com/labstack/echo-jwt"
 	"os"
 	"time"
@@ -13,9 +14,17 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func envVariable(key string) string {
-	godotenv.Load()
-	return os.Getenv(key)
+type Auth interface {
+	envVariable(string) string
+	validateJWT(echo.Context) error
+	login(echo.Context, *sql.DB) error
+	register(echo.Context, *sql.DB) error
+	init()
+}
+
+type auth struct {
+	weaver.Implements[Auth]
+	jwtCustomClaims
 }
 
 type jwtCustomClaims struct {
@@ -24,11 +33,16 @@ type jwtCustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func validateJWT(c echo.Context) error {
+func (a *auth) envVariable(key string) string {
+	godotenv.Load()
+	return os.Getenv(key)
+}
+
+func (a *auth) validateJWT(c echo.Context) error {
 	return c.String(200, "hey")
 }
 
-func login(c echo.Context, db *sql.DB) error {
+func (a *auth) login(c echo.Context, db *sql.DB) error {
 	username := c.QueryParam("username")
 	password := c.QueryParam("password")
 
@@ -58,7 +72,7 @@ func login(c echo.Context, db *sql.DB) error {
 	)
 }
 
-func register(c echo.Context, db *sql.DB) error {
+func (b *auth) register(c echo.Context, db *sql.DB) error {
 
 	username := c.QueryParam("username")
 	password := c.QueryParam("password")
@@ -92,7 +106,7 @@ func register(c echo.Context, db *sql.DB) error {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	t, err := token.SignedString([]byte(envVariable("SECRET")))
+	t, err := token.SignedString([]byte(b.envVariable("SECRET")))
 
 	if err != nil {
 		print(t)
@@ -110,10 +124,10 @@ func register(c echo.Context, db *sql.DB) error {
 	return c.String(200, "User "+username+" has been registered")
 }
 
-func main() {
+func (a *auth) init() {
 	e := echo.New()
 
-	path := envVariable("DB")
+	path := a.envVariable("DB")
 
 	db, err := sql.Open("postgres", path)
 	if err != nil {
@@ -129,19 +143,19 @@ func main() {
 		NewClaimsFunc: func(c echo.Context) jwt.Claims {
 			return new(jwtCustomClaims)
 		},
-		SigningKey: []byte(envVariable("SECRET")),
+		SigningKey: []byte(a.envVariable("SECRET")),
 	}
 	r.Use(echojwt.WithConfig(config))
 
 	e.POST("/login", func(c echo.Context) error {
-		return login(c, db)
+		return a.login(c, db)
 	})
 
 	e.POST("/register", func(c echo.Context) error {
-		return register(c, db)
+		return a.register(c, db)
 	})
 
-	r.GET("", validateJWT)
+	r.GET("", a.validateJWT)
 
 	defer db.Close()
 

@@ -2,17 +2,25 @@ package main
 
 import (
 	"fmt"
+	"github.com/ServiceWeaver/weaver"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 )
 
 var (
 	upgrader = websocket.Upgrader{}
 )
 
-func hello(c echo.Context) error {
+type Chat interface {
+	hello(echo.Context) error
+}
+
+type chat struct {
+	weaver.Implements[Chat]
+}
+
+func (a *chat) hello(c echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
@@ -33,12 +41,4 @@ func hello(c echo.Context) error {
 		}
 		fmt.Printf("%s\n", msg)
 	}
-}
-
-func main() {
-	e := echo.New()
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-	e.GET("/", hello)
-	e.Logger.Fatal(e.Start(":8082"))
 }
