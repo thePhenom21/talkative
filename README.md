@@ -1,2 +1,2 @@
 # talkative
-A classical chat app. Create using Flutter in the frontend and Spring in the backend.
+A classical chat app. Created using Go for backend and Flutter in frontend. "Still in progress"
