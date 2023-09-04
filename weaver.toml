@@ -1,5 +1,5 @@
 [serviceweaver]
 binary = "./app"
 
-[listeners]
-hl = {address = "localhost:8080"}
+[multi]
+listeners.hl = {address = "0.0.0.0:8080"}
