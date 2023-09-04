@@ -1,0 +1,5 @@
+[serviceweaver]
+binary = "./app"
+
+[listeners]
+hl = {address = "localhost:8080"}

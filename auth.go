@@ -1,31 +1,17 @@
 package main
 
 import (
+	"context"
 	"database/sql"
-	"github.com/ServiceWeaver/weaver"
-	echojwt "github.com/labstack/echo-jwt"
 	"os"
 	"time"
 
+	"github.com/ServiceWeaver/weaver"
+
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/lib/pq"
 )
-
-type Auth interface {
-	envVariable(string) string
-	validateJWT(echo.Context) error
-	login(echo.Context, *sql.DB) error
-	register(echo.Context, *sql.DB) error
-	init()
-}
-
-type auth struct {
-	weaver.Implements[Auth]
-	jwtCustomClaims
-}
 
 type jwtCustomClaims struct {
 	Username string `json:"username"`
@@ -33,18 +19,28 @@ type jwtCustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func (a *auth) envVariable(key string) string {
+type Auth interface {
+	Login(context.Context, string, string) (string, error)
+	Register(context.Context, string, string) (string, error)
+}
+
+type auth struct {
+	weaver.Implements[Auth]
+}
+
+func EnvVariable(key string) string {
 	godotenv.Load()
 	return os.Getenv(key)
 }
 
-func (a *auth) validateJWT(c echo.Context) error {
-	return c.String(200, "hey")
-}
+func (*auth) Login(c context.Context, username string, password string) (string, error) {
 
-func (a *auth) login(c echo.Context, db *sql.DB) error {
-	username := c.QueryParam("username")
-	password := c.QueryParam("password")
+	path := EnvVariable("DB")
+
+	db, err := sql.Open("postgres", path)
+	if err != nil {
+		print("Err" + err.Error())
+	}
 
 	q := "SELECT tok FROM users WHERE username=$1 AND password=$2 "
 
@@ -55,27 +51,31 @@ func (a *auth) login(c echo.Context, db *sql.DB) error {
 	}
 
 	if row == nil {
-		return c.String(400, "User not found")
+		return "User not found", err
 	}
 
 	if !row.Next() {
-		return c.String(400, "User not found")
+		return "User not found", err
 	}
 
 	var str_key string
 
 	row.Scan(&str_key)
 
-	return c.JSON(
-		200,
-		map[string]any{"key": str_key},
-	)
+	db.Close()
+
+	return str_key, err
+
 }
 
-func (b *auth) register(c echo.Context, db *sql.DB) error {
+func (*auth) Register(c context.Context, username string, password string) (string, error) {
 
-	username := c.QueryParam("username")
-	password := c.QueryParam("password")
+	path := EnvVariable("DB")
+
+	db, err := sql.Open("postgres", path)
+	if err != nil {
+		print("Err" + err.Error())
+	}
 
 	var checkUser string
 
@@ -86,13 +86,13 @@ func (b *auth) register(c echo.Context, db *sql.DB) error {
 	}
 
 	if row == nil {
-		return c.String(400, "db error")
+		return "DB ERROR", err
 	}
 
 	for row.Next() {
 		row.Scan(&checkUser)
 		if checkUser == username {
-			return c.String(400, "User already registered")
+			return "User already registered", err
 		}
 	}
 
@@ -106,11 +106,11 @@ func (b *auth) register(c echo.Context, db *sql.DB) error {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
-	t, err := token.SignedString([]byte(b.envVariable("SECRET")))
+	t, err := token.SignedString([]byte(EnvVariable("SECRET")))
 
 	if err != nil {
 		print(t)
-		return err
+		return "Error", err
 	}
 
 	q := "INSERT INTO users (username,password,tok) VALUES($1,$2,$3)"
@@ -121,43 +121,7 @@ func (b *auth) register(c echo.Context, db *sql.DB) error {
 		print(a.LastInsertId())
 	}
 
-	return c.String(200, "User "+username+" has been registered")
-}
+	db.Close()
 
-func (a *auth) init() {
-	e := echo.New()
-
-	path := a.envVariable("DB")
-
-	db, err := sql.Open("postgres", path)
-	if err != nil {
-		print("Err" + err.Error())
-	}
-
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
-
-	r := e.Group("/restricted")
-
-	config := echojwt.Config{
-		NewClaimsFunc: func(c echo.Context) jwt.Claims {
-			return new(jwtCustomClaims)
-		},
-		SigningKey: []byte(a.envVariable("SECRET")),
-	}
-	r.Use(echojwt.WithConfig(config))
-
-	e.POST("/login", func(c echo.Context) error {
-		return a.login(c, db)
-	})
-
-	e.POST("/register", func(c echo.Context) error {
-		return a.register(c, db)
-	})
-
-	r.GET("", a.validateJWT)
-
-	defer db.Close()
-
-	e.Logger.Fatal(e.Start(":8081"))
+	return ("User " + username + " has been registerd"), err
 }

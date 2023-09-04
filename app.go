@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
-	"database/sql"
+	"fmt"
+	"log"
+
 	"github.com/ServiceWeaver/weaver"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/gorilla/websocket"
 	echojwt "github.com/labstack/echo-jwt"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"log"
+)
+
+var (
+	upgrader = websocket.Upgrader{}
 )
 
 func main() {
@@ -21,9 +27,8 @@ func main() {
 // it and passes it to serve.
 type app struct {
 	weaver.Implements[weaver.Main]
-	authClient   weaver.Ref[Auth]
-	chatClient   weaver.Ref[Chat]
-	httpListener weaver.Listener
+	authClient weaver.Ref[Auth]
+	hl         weaver.Listener
 }
 
 // serve is called by weaver.Run and contains the body of the application.
@@ -31,14 +36,6 @@ func serve(ctx context.Context, app *app) error {
 	e := echo.New()
 
 	var authClient = app.authClient.Get()
-	var chatClient = app.chatClient.Get()
-
-	path := authClient.envVariable("DB")
-
-	db, err := sql.Open("postgres", path)
-	if err != nil {
-		print("Err" + err.Error())
-	}
 
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
@@ -49,24 +46,49 @@ func serve(ctx context.Context, app *app) error {
 		NewClaimsFunc: func(c echo.Context) jwt.Claims {
 			return new(jwtCustomClaims)
 		},
-		SigningKey: []byte(authClient.envVariable("SECRET")),
+		SigningKey: []byte(EnvVariable("SECRET")),
 	}
+
 	r.Use(echojwt.WithConfig(config))
 
-	e.POST("/login", func(c echo.Context) error {
-		return authClient.login(c, db)
+	r.GET("", func(c echo.Context) error {
+		ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+		if err != nil {
+			return err
+		}
+		defer ws.Close()
+
+		for {
+			// Write
+			err := ws.WriteMessage(websocket.TextMessage, []byte("Hello, Client!"))
+			if err != nil {
+				c.Logger().Error(err)
+			}
+
+			// Read
+			_, msg, err := ws.ReadMessage()
+			if err != nil {
+				c.Logger().Error(err)
+			}
+			fmt.Printf("%s\n", msg)
+		}
 	})
 
 	e.POST("/register", func(c echo.Context) error {
-		return authClient.register(c, db)
+		returnVal, _ := authClient.Register(ctx, c.QueryParam("username"), c.QueryParam("password"))
+
+		return c.String(200, returnVal)
+
 	})
 
-	r.GET("", chatClient.hello)
+	e.POST("/login", func(c echo.Context) error {
+		returnVal, _ := authClient.Login(ctx, c.QueryParam("username"), c.QueryParam("password"))
 
-	defer db.Close()
+		return c.String(200, returnVal)
+	})
 
-	e.Listener = app.httpListener
+	e.Listener = app.hl
 
-	return e.Start("localhost:8080")
+	return e.Start("")
 
 }
