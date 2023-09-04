@@ -32,7 +32,9 @@ func login(c echo.Context, db *sql.DB) error {
 	username := c.QueryParam("username")
 	password := c.QueryParam("password")
 
-	row, err := db.Query("SELECT tok FROM users WHERE username='" + username + "' AND password='" + password + "'")
+	q := "SELECT tok FROM users WHERE username=$1 AND password=$2 "
+
+	row, err := db.Query(q, username, password)
 
 	if err != nil {
 		println("error " + err.Error())
@@ -97,7 +99,8 @@ func register(c echo.Context, db *sql.DB) error {
 		return err
 	}
 
-	a, err := db.Exec("INSERT INTO users (username,password,tok) VALUES('" + username + "','" + password + "','" + t + "')")
+	q := "INSERT INTO users (username,password,tok) VALUES($1,$2,$3)"
+	a, err := db.Exec(q, username, password, t)
 
 	if err != nil {
 		print("err" + err.Error())
