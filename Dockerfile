@@ -28,7 +28,7 @@ COPY *.go ./
 COPY .env ./
 COPY weaver.toml ./
 
-EXPOSE 8082/tcp
+EXPOSE 8080/tcp
 
 RUN go install
 RUN go install github.com/ServiceWeaver/weaver/cmd/weaver@latest
@@ -39,4 +39,4 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app
 ENV PATH="/go/bin:$PATH"
 
 
-CMD ["weaver","single","deploy","weaver.toml"]
+CMD ["weaver","multi","deploy","weaver.toml"]

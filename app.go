@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log"
+
+	_ "github.com/lib/pq"
 
 	"github.com/ServiceWeaver/weaver"
 	"github.com/golang-jwt/jwt/v4"
@@ -34,6 +37,18 @@ type app struct {
 // serve is called by weaver.Run and contains the body of the application.
 func serve(ctx context.Context, app *app) error {
 	e := echo.New()
+
+	path := EnvVariable("DB")
+
+	db, _ := sql.Open("postgres", path)
+
+	_, err := db.Query("SELECT * FROM users")
+
+	if err != nil {
+		db.Exec("CREATE TABLE users(username varchar,password varchar,tok varchar)")
+	}
+
+	db.Close()
 
 	var authClient = app.authClient.Get()
 
@@ -81,6 +96,10 @@ func serve(ctx context.Context, app *app) error {
 
 	})
 
+	e.GET("/test", func(c echo.Context) error {
+		return c.String(200, "connection succesful")
+	})
+
 	e.POST("/login", func(c echo.Context) error {
 		returnVal, _ := authClient.Login(ctx, c.QueryParam("username"), c.QueryParam("password"))
 
@@ -89,6 +108,6 @@ func serve(ctx context.Context, app *app) error {
 
 	e.Listener = app.hl
 
-	return e.Start("localhost:12345")
+	return e.Start("")
 
 }
